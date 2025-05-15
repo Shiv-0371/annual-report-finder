@@ -1,72 +1,73 @@
 import streamlit as st
 import pandas as pd
 import requests
-from bs4 import BeautifulSoup
-import time
-from serpapi import GoogleSearch
+import tldextract
+from time import sleep
+import io
 
-st.title("Company Annual Report Finder (with SerpAPI)")
+st.set_page_config(page_title="Annual Report Finder", layout="centered")
+st.title("📊 Annual Report / Investor Relations Finder")
 
-SERPAPI_API_KEY = st.text_input("Enter your SerpAPI API Key", type="password")
+# Sidebar for API input
+st.sidebar.header("🔐 API Configuration")
+api_key = st.sidebar.text_input("Google API Key", type="password")
+cx_id = st.sidebar.text_input("Search Engine ID (CX)")
 
-uploaded_file = st.file_uploader("Upload CSV with company names (one per line)", type=["csv", "txt"])
+# Upload CSV
+uploaded_file = st.file_uploader("Upload CSV file with a 'Company Name' column", type=["csv"])
 
-def get_official_website(company_name, api_key):
-    params = {
-        "engine": "google",
-        "q": f"{company_name} official website",
-        "api_key": api_key,
-        "num": 1,
-    }
-    try:
-        search = GoogleSearch(params)
-        results = search.get_dict()
-        organic_results = results.get("organic_results", [])
-        if organic_results:
-            return organic_results[0].get("link")
-    except Exception as e:
-        return None
-    return None
+if uploaded_file and api_key and cx_id:
+    df = pd.read_csv(uploaded_file)
+    if 'Company Name' not in df.columns:
+        st.error("The uploaded CSV must have a 'Company Name' column.")
+    else:
+        st.success("File loaded successfully. Ready to search!")
 
-def find_annual_report_link(website_url):
-    try:
-        resp = requests.get(website_url, timeout=10, headers={'User-Agent': 'Mozilla/5.0'})
-        soup = BeautifulSoup(resp.text, 'html.parser')
-        for a in soup.find_all('a', href=True):
-            href = a['href'].lower()
-            text = a.get_text(strip=True).lower()
-            if any(keyword in href or keyword in text for keyword in ['annual-report', 'investor', 'financials', 'reports', 'fund']):
-                full_url = href if href.startswith('http') else website_url.rstrip('/') + '/' + href.lstrip('/')
-                return full_url
-        return "Not found"
-    except Exception:
-        return "Error fetching site"
+        if st.button("🔍 Start Searching"):
+            results = []
+            progress = st.progress(0)
 
-if uploaded_file and SERPAPI_API_KEY:
-    companies = pd.read_csv(uploaded_file, header=None).iloc[:, 0].tolist()
-    st.write(f"Loaded {len(companies)} companies")
+            for i, company in enumerate(df['Company Name']):
+                query = f"{company} investor relations OR annual report"
+                url = f"https://www.googleapis.com/customsearch/v1?q={requests.utils.quote(query)}&key={api_key}&cx={cx_id}"
 
-    results = []
-    progress = st.progress(0)
+                try:
+                    response = requests.get(url)
+                    response.raise_for_status()
+                    data = response.json()
+                    items = data.get('items', [])
 
-    for idx, company in enumerate(companies):
-        st.write(f"🔎 Processing: {company}")
-        official_website = get_official_website(company, SERPAPI_API_KEY)
-        annual_report_url = find_annual_report_link(official_website) if official_website else "Not found"
+                    if items:
+                        top_result = items[0]
+                        link = top_result['link']
+                        domain = tldextract.extract(link).registered_domain
+                        results.append({
+                            'Company Name': company,
+                            'URL': link,
+                            'Domain': domain,
+                            'Status': 'Found'
+                        })
+                    else:
+                        results.append({'Company Name': company, 'URL': '', 'Domain': '', 'Status': 'Not Found'})
 
-        results.append({
-            'Company': company,
-            'Official Website': official_website or "Not found",
-            'Annual Report URL': annual_report_url
-        })
+                except Exception as e:
+                    results.append({'Company Name': company, 'URL': '', 'Domain': '', 'Status': f'Error: {str(e)}'})
 
-        progress.progress((idx + 1) / len(companies))
-        time.sleep(1)
+                progress.progress((i + 1) / len(df))
+                sleep(1)  # Avoid API rate limits
 
-    df = pd.DataFrame(results)
-    st.dataframe(df)
-    csv = df.to_csv(index=False).encode('utf-8')
-    st.download_button("📥 Download Results as CSV", csv, "annual_reports.csv", "text/csv")
+            results_df = pd.DataFrame(results)
+            st.success("✅ Search complete!")
+            st.dataframe(results_df)
 
+            # Download button
+            csv_buffer = io.StringIO()
+            results_df.to_csv(csv_buffer, index=False)
+            st.download_button(
+                label="📥 Download Results as CSV",
+                data=csv_buffer.getvalue(),
+                file_name="annual_report_results.csv",
+                mime="text/csv"
+            )
 else:
-    st.info("Please enter your SerpAPI key and upload a company list.")
+    st.info("Please upload a CSV file and provide your API credentials to continue.")
