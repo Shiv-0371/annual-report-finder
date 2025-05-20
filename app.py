@@ -14,7 +14,7 @@ api_key = st.sidebar.text_input("Google API Key", type="password")
 cx_id = st.sidebar.text_input("Search Engine ID (CX)")
 
 # Upload CSV
-uploaded_file = st.file_uploader("Upload CSV file with a 'Company Name' column", type=["csv"])
+uploaded_file = st.file_uploader("Upload CSV file with a 'Company Name' column", type=["xlsx"])
 
 if uploaded_file and api_key and cx_id:
     df = pd.read_excel(uploaded_file)
