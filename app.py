@@ -17,7 +17,7 @@ cx_id = st.sidebar.text_input("Search Engine ID (CX)")
 uploaded_file = st.file_uploader("Upload CSV file with a 'Company Name' column", type=["csv"])
 
 if uploaded_file and api_key and cx_id:
-    df = pd.read_csv(uploaded_file)
+    df = pd.read_excel(uploaded_file)
     if 'Company Name' not in df.columns:
         st.error("The uploaded CSV must have a 'Company Name' column.")
     else:
